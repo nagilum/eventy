@@ -1,29 +1,49 @@
 ﻿namespace Eventy;
 
-public class Options : IOptions
+public class Options
 {
     /// <summary>
-    /// <inheritdoc cref="IOptions.Command"/>
+    /// Log levels to list.
     /// </summary>
-    public Command? Command { get; set; }
-
+    public List<byte> LogLevels { get; } = [];
+    
     /// <summary>
-    /// <inheritdoc cref="IOptions.LogId"/>
-    /// </summary>
-    public string? LogId { get; set; }
-
-    /// <summary>
-    /// <inheritdoc cref="IOptions.LogName"/>
+    /// Log name to list records from.
     /// </summary>
     public string? LogName { get; set; }
 
     /// <summary>
-    /// <inheritdoc cref="IOptions.MaxEntries"/>
+    /// Max number of entries to list.
     /// </summary>
     public int? MaxEntries { get; set; } = 10;
+    
+    /// <summary>
+    /// List log entries from (including) this date.
+    /// </summary>
+    public DateTime? QueryFrom { get; set; }
+    
+    /// <summary>
+    /// List log entries to (including) this date.
+    /// </summary>
+    public DateTime? QueryTo { get; set; }
+    
+    /// <summary>
+    /// Record to view.
+    /// </summary>
+    public long? RecordId { get; set; }
 
     /// <summary>
-    /// <inheritdoc cref="IOptions.ReverseDirection"/>
+    /// Reverse the order of log entries to oldest to newest.
     /// </summary>
     public bool ReverseDirection { get; set; }
+
+    /// <summary>
+    /// Whether all search terms must be found or just one for a match.
+    /// </summary>
+    public bool SearchMustMatchAll { get; set; }
+
+    /// <summary>
+    /// Search terms to match.
+    /// </summary>
+    public List<string> SearchTerms { get; } = [];
 }
