@@ -38,7 +38,7 @@ internal static class Program
     {
         Console.WriteLine(
             """
-            Eventy v0.2-beta
+            Eventy v0.3-beta
             Windows event log viewer
             
             Usage:
