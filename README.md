@@ -29,6 +29,7 @@ eventy [log-name] [record-id] [options]
 * `-l|--level <name>` -  Only list log entries matching given log level name. Can be repeated.
 * `-s|--search <term>` - Search in any field for the given text. Can be repeated.
 * `-a|--all` - Set whether all search terms must be found or just one for a match.
+* `-x|--export <path>` - Set path to export result as JSON to.
     
 ## Examples
 
