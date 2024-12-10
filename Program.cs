@@ -28,7 +28,7 @@ internal static class Program
 
         var engine = new LogEngine(options);
 
-        engine.QueryEventLogs();
+        engine.Query();
     }
 
     /// <summary>

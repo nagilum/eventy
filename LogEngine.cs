@@ -13,25 +13,24 @@ public class LogEngine(Options options)
     /// <summary>
     /// Query for log names or entries matching the parsed options.
     /// </summary>
-    public void QueryEventLogs()
+    public void Query()
     {
+        // Query and list all log names the user have access to.
         if (options.LogName is null &&
             options.RecordId is null)
         {
-            this.ListLogNames();
+            this.QueryLogNames();
         }
+        
+        // Query and list log entries from the given log name.
         else if (options.LogName is not null &&
                  options.RecordId is null)
         {
             this.QueryLogEntries();
         }
-        else if (options.LogName is not null &&
-                 options.RecordId is not null)
-        {
-            this.ViewLogEntry();
-        }
-        else if (options.LogName is null &&
-                 options.RecordId is not null)
+        
+        // Query log names and display the first record that matches the ID.
+        else if (options.RecordId is not null)
         {
             this.QueryLogEntry();
         }
@@ -200,7 +199,7 @@ public class LogEngine(Options options)
     /// <summary>
     /// Query and list all log names the user have access to.
     /// </summary>
-    private void ListLogNames()
+    private void QueryLogNames()
     {
         try
         {
@@ -425,30 +424,39 @@ public class LogEngine(Options options)
     }
 
     /// <summary>
-    /// Query all log names and display the first record that matches the ID.
+    /// Query log names and display the first record that matches the ID.
     /// </summary>
     private void QueryLogEntry()
     {
         string[] names;
 
-        try
+        if (options.LogName is not null)
         {
-            names = EventLog.GetEventLogs()
-                .Where(this.UserHasAccess)
-                .Select(n => n.LogDisplayName)
-                .OrderBy(n => n)
-                .ToArray();
-
-            if (names.Length is 0)
+            names = [options.LogName];
+        }
+        else
+        {
+            try
             {
-                throw new Exception("No log names found.");
+                names = EventLog.GetEventLogs()
+                    .Where(this.UserHasAccess)
+                    .Select(n => n.LogDisplayName)
+                    .OrderBy(n => n)
+                    .ToArray();
+
+                if (names.Length is 0)
+                {
+                    throw new Exception("No log names found.");
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.WriteException(ex);
+                return;
             }
         }
-        catch (Exception ex)
-        {
-            _logger.WriteException(ex);
-            return;
-        }
+
+        var found = 0;
 
         foreach (var name in names)
         {
@@ -465,7 +473,7 @@ public class LogEngine(Options options)
                 Environment.NewLine);
             
             EventRecord? record = null;
-        
+
             try
             {
                 var query = new EventLogQuery(name, PathType.LogName)
@@ -486,76 +494,55 @@ public class LogEngine(Options options)
                     break;
                 }
             }
+            catch (EventLogNotFoundException)
+            {
+                _logger.WriteError($"Unable to access event log {name}");
+                continue;
+            }
             catch (Exception ex)
             {
                 _logger.WriteException(ex);
-                return;
+                continue;
             }
 
             if (record is null)
             {
+                if (options.LogName is null)
+                {
+                    _logger.WriteError("Record not found!");
+                }
+                
                 continue;
             }
 
+            found++;
+
             this.ViewLogEntry(record);
-            return;
         }
-        
-        _logger.WriteError("Record not found!");
+
+        switch (found)
+        {
+            case > 1:
+                _logger.Write(
+                    "Found ",
+                    ConsoleColor.Blue,
+                    found,
+                    (byte)0x00,
+                    " log entries.",
+                    Environment.NewLine);
+                break;
+            
+            case 0:
+                _logger.WriteError("Record not found!");
+                break;
+        }
     }
 
     /// <summary>
     /// Query and view log entry from the given log name.
     /// </summary>
-    private void ViewLogEntry(EventRecord? record = null)
+    private void ViewLogEntry(EventRecord record)
     {
-        if (record is null)
-        {
-            _logger.Write(
-                "Querying for log entry ",
-                ConsoleColor.Blue,
-                options.RecordId!,
-                (byte)0x00,
-                " under the ",
-                ConsoleColor.White,
-                options.LogName!,
-                (byte)0x00,
-                " log name.",
-                Environment.NewLine);
-        
-            try
-            {
-                var query = new EventLogQuery(options.LogName, PathType.LogName)
-                {
-                    ReverseDirection = !options.ReverseDirection
-                };
-
-                using var reader = new EventLogReader(query);
-
-                while (reader.ReadEvent() is { } eventRecord)
-                {
-                    if (eventRecord.RecordId?.Equals(options.RecordId) is not true)
-                    {
-                        continue;
-                    }
-
-                    record = eventRecord;
-                    break;
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.WriteException(ex);
-                return;
-            }
-
-            if (record is null)
-            {
-                _logger.WriteError("Record not found!");
-                return;
-            }
-        }
-
         string? description = default;
         string? opcodeDisplayName = default;
         string? userName = default;
@@ -619,7 +606,8 @@ public class LogEngine(Options options)
             { "Task", taskDisplayName ?? "-" },
             { "Keywords", keywords?.Length > 0 ? string.Join(", ", keywords) : "-" },
                 
-            { "Logged", record.TimeCreated?.ToString("yyyy-MM-dd HH:mm:ss") ?? "-" }
+            { "Logged", record.TimeCreated?.ToString("yyyy-MM-dd HH:mm:ss") ?? "-" },
+            { "Description", string.Empty }
         };
         
         var longest = 0;
@@ -631,6 +619,8 @@ public class LogEngine(Options options)
                 longest = key.Length;
             }
         }
+
+        _logger.Write(Environment.NewLine);
 
         foreach (var (key, value) in dict)
         {
@@ -649,5 +639,7 @@ public class LogEngine(Options options)
                 description,
                 Environment.NewLine);
         }
+        
+        _logger.Write(Environment.NewLine);
     }
 }
