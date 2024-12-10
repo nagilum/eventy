@@ -243,9 +243,8 @@ public class LogEngine(Options options)
             options.LogName!,
             (byte)0x00,
             " log name.",
+            Environment.NewLine,
             Environment.NewLine);
-        
-        var records = new List<EventRecord>();
 
         EventLogReader? reader = null;
 
@@ -286,17 +285,17 @@ public class LogEngine(Options options)
                 break;
             }
 
-            var add =
+            var view =
                 this.CheckForMatchingLogLevel(record) &&
                 this.CheckCreatedDateTime(record) &&
                 this.CheckForMatchingSearchTerms(record);
 
-            if (!add)
+            if (!view)
             {
                 continue;
             }
 
-            records.Add(record);
+            this.ViewEventRecordRow(record);
 
             count++;
 
@@ -306,121 +305,36 @@ public class LogEngine(Options options)
             }
         }
 
-        reader.Dispose();
-
-        if (records.Count is 0)
+        if (count is 0)
         {
             _logger.Write(
+                Environment.NewLine,
                 "Found no log entries matching query under the ",
                 ConsoleColor.White,
                 options.LogName!,
                 (byte)0x00,
                 " log name.",
                 Environment.NewLine);
-            
-            return;
         }
-
-        var longestLevel = records
-            .Select(n => n.Level switch
-            {
-                0 => "Information",
-                1 => "Critical",
-                2 => "Error",
-                3 => "Warning",
-                4 => "Information",
-                5 => "Verbose",
-                _ => "Unknown"
-            })
-            .Select(n => n.Length)
-            .Max() + 1;
-
-        var longestId = records
-            .Select(n => n.RecordId?.ToString() ?? "-")
-            .Select(n => n.Length)
-            .Max() + 1;
-
-        var levelLength = "Level".Length;
-        var recordIdLength = "Record Id".Length;
-
-        if (longestLevel < levelLength)
+        else
         {
-            longestLevel = levelLength;
-        }
-
-        if (longestId < recordIdLength)
-        {
-            longestId = recordIdLength;
-        }
-
-        longestLevel += 2;
-        longestId += 2;
-
-        _logger.Write(
-            "Level",
-            new string(' ', longestLevel - levelLength),
-            "Record Id",
-            new string(' ', longestId - recordIdLength),
-            "Created              ",
-            "Source",
-            Environment.NewLine);
-
-        foreach (var record in records)
-        {
-            var id = record.RecordId?.ToString() ?? "-";
-            var created = record.TimeCreated?.ToString("yyyy-MM-dd HH:mm:ss") ?? "-";
-            var source = record.ProviderName ?? "-";
-
-            var levelColor = record.Level switch
-            {
-                0 => ConsoleColor.White, // LogAlways
-                1 => ConsoleColor.Red, // Critical
-                2 => ConsoleColor.Red, // Error
-                3 => ConsoleColor.Yellow, // Warning,
-                4 => ConsoleColor.White, // Informational
-                5 => ConsoleColor.Magenta, // Verbose
-                _ => ConsoleColor.Blue
-            };
-
-            var levelName = record.Level switch
-            {
-                0 => "Information",
-                1 => "Critical",
-                2 => "Error",
-                3 => "Warning",
-                4 => "Information",
-                5 => "Verbose",
-                _ => "Unknown"
-            };
-
             _logger.Write(
-                levelColor,
-                levelName,
-                new string(' ', longestLevel - levelName.Length),
+                Environment.NewLine,
+                "Found ",
                 ConsoleColor.Blue,
-                id,
-                new string(' ', longestId - id.Length),
-                ConsoleColor.Green,
-                created,
-                new string(' ', 21 - created.Length),
+                count,
+                (byte)0x00,
+                " log entr",
+                count is 1 ? "y" : "ies",
+                " matching query under the ",
                 ConsoleColor.White,
-                source,
+                options.LogName!,
+                (byte)0x00,
+                " log name.",
                 Environment.NewLine);
         }
-        
-        _logger.Write(
-            "Found ",
-            ConsoleColor.Blue,
-            records.Count,
-            (byte)0x00,
-            " log entr",
-            records.Count is 1 ? "y" : "ies",
-            " matching query under the ",
-            ConsoleColor.White,
-            options.LogName!,
-            (byte)0x00,
-            " log name.",
-            Environment.NewLine);
+
+        reader.Dispose();
     }
 
     /// <summary>
@@ -517,7 +431,7 @@ public class LogEngine(Options options)
 
             found++;
 
-            this.ViewLogEntry(record);
+            this.ViewEventRecordFull(record);
         }
 
         switch (found)
@@ -539,9 +453,10 @@ public class LogEngine(Options options)
     }
 
     /// <summary>
-    /// Query and view log entry from the given log name.
+    /// Print out all info about the event record.
     /// </summary>
-    private void ViewLogEntry(EventRecord record)
+    /// <param name="record">Event record.</param>
+    private void ViewEventRecordFull(EventRecord record)
     {
         string? description = default;
         string? opcodeDisplayName = default;
@@ -641,5 +556,52 @@ public class LogEngine(Options options)
         }
         
         _logger.Write(Environment.NewLine);
+    }
+
+    /// <summary>
+    /// View a condensed row-version of the event record.
+    /// </summary>
+    /// <param name="record">Event record.</param>
+    private void ViewEventRecordRow(EventRecord record)
+    {
+        var id = record.RecordId?.ToString() ?? "-";
+        var created = record.TimeCreated?.ToString("yyyy-MM-dd HH:mm:ss") ?? "-";
+        var source = record.ProviderName ?? "-";
+
+        var levelColor = record.Level switch
+        {
+            0 => ConsoleColor.White, // LogAlways
+            1 => ConsoleColor.Red, // Critical
+            2 => ConsoleColor.Red, // Error
+            3 => ConsoleColor.Yellow, // Warning,
+            4 => ConsoleColor.White, // Informational
+            5 => ConsoleColor.Magenta, // Verbose
+            _ => ConsoleColor.Blue
+        };
+
+        var levelName = record.Level switch
+        {
+            0 => "Information",
+            1 => "Critical",
+            2 => "Error",
+            3 => "Warning",
+            4 => "Information",
+            5 => "Verbose",
+            _ => "Unknown"
+        };
+
+        _logger.Write(
+            levelColor,
+            levelName,
+            new string(' ', 13 - levelName.Length),
+            ConsoleColor.Blue,
+            id,
+            new string(' ', 10 - id.Length),
+            ConsoleColor.Green,
+            created,
+            new string(' ', 21 - created.Length),
+            ConsoleColor.White,
+            source,
+            Environment.NewLine);
     }
 }
