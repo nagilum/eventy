@@ -3,6 +3,11 @@
 public class Options
 {
     /// <summary>
+    /// Path to export result as JSON to.
+    /// </summary>
+    public string? ExportPath { get; set; }
+    
+    /// <summary>
     /// Log levels to list.
     /// </summary>
     public List<byte> LogLevels { get; } = [];

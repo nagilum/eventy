@@ -1,4 +1,5 @@
 ﻿using System.Globalization;
+using Serilog;
 
 namespace Eventy;
 
@@ -7,7 +8,9 @@ internal static class Program
     /// <summary>
     /// Logger service.
     /// </summary>
-    private static readonly ConsoleLogger Logger = new();
+    private static readonly Serilog.Core.Logger Logger = new LoggerConfiguration()
+        .WriteTo.Console()
+        .CreateLogger();
     
     /// <summary>
     /// Init all the things...
@@ -52,6 +55,7 @@ internal static class Program
               -l|--level <name>    Only list log entries matching given log level name. Can be repeated.
               -s|--search <term>   Search in any field for the given text. Can be repeated.
               -a|--all             Set whether all search terms must be found or just one for a match.
+              -x|--export <path>   Set path to export result as JSON to.
               
             Examples:
               eventy Application -m 50 -l info -s foo -s bar
@@ -92,13 +96,13 @@ internal static class Program
                 case "--max":
                     if (i == args.Length - 1)
                     {
-                        Logger.WriteError($"Argument {argv} must be followed by a number.");
+                        Logger.Error("Argument {argv} must be followed by a number.", argv);
                         return false;
                     }
 
                     if (!int.TryParse(args[i + 1], out var max))
                     {
-                        Logger.WriteError($"Unable to parse {args[i + 1]} to a valid number.");
+                        Logger.Error("Unable to parse {argv} to a valid number.", args[i + 1]);
                         return false;
                     }
 
@@ -115,7 +119,7 @@ internal static class Program
                 case "--from":
                     if (i == args.Length - 1)
                     {
-                        Logger.WriteError($"Argument {argv} must be followed by a date/time.");
+                        Logger.Error("Argument {argv} must be followed by a date/time.", argv);
                         return false;
                     }
 
@@ -144,7 +148,7 @@ internal static class Program
                             break;
                         
                         default:
-                            Logger.WriteError($"Unable to parse {argv} to a valid date/time. Must be in format \"yyyy-MM-dd\" or \"yyyy-MM-dd HH:mm:ss\"");
+                            Logger.Error("Unable to parse {argv} to a valid date/time. Must be in format \"yyyy-MM-dd\" or \"yyyy-MM-dd HH:mm:ss\"", argv);
                             return false;
                     }
                     
@@ -155,7 +159,7 @@ internal static class Program
                 case "--to":
                     if (i == args.Length - 1)
                     {
-                        Logger.WriteError($"Argument {argv} must be followed by a date/time.");
+                        Logger.Error("Argument {argv} must be followed by a date/time.", argv);
                         return false;
                     }
                     
@@ -186,7 +190,7 @@ internal static class Program
                             break;
                         
                         default:
-                            Logger.WriteError($"Unable to parse {argv} to a valid date/time. Must be in format \"yyyy-MM-dd\" or \"yyyy-MM-dd HH:mm:ss\"");
+                            Logger.Error("Unable to parse {argv} to a valid date/time. Must be in format \"yyyy-MM-dd\" or \"yyyy-MM-dd HH:mm:ss\"", argv);
                             return false;
                     }
                     
@@ -197,7 +201,7 @@ internal static class Program
                 case "--level":
                     if (i == args.Length - 1)
                     {
-                        Logger.WriteError($"Argument {argv} must be followed by a level name or index number.");
+                        Logger.Error("Argument {argv} must be followed by a level name or index number.", argv);
                         return false;
                     }
 
@@ -227,7 +231,7 @@ internal static class Program
                             break;
                         
                         default:
-                            Logger.WriteError($"Unable to parse {argv} to a valid log level.");
+                            Logger.Error("Unable to parse {argv} to a valid log level.", argv);
                             return false;
                     }
 
@@ -238,7 +242,7 @@ internal static class Program
                 case "--search":
                     if (i == args.Length - 1)
                     {
-                        Logger.WriteError($"Argument {argv} must be followed by a search term.");
+                        Logger.Error("Argument {argv} must be followed by a search term.", argv);
                         return false;
                     }
 
@@ -251,6 +255,18 @@ internal static class Program
                     options.SearchMustMatchAll = true;
                     break;
                 
+                case "-x":
+                case "--export":
+                    if (i == args.Length - 1)
+                    {
+                        Logger.Error("Argument {argv} must be followed by a file path.", argv);
+                        return false;
+                    }
+
+                    options.ExportPath = args[i + 1];
+                    skip = true;
+                    break;
+                
                 default:
                     if (long.TryParse(argv, out var recordId))
                     {
@@ -260,7 +276,7 @@ internal static class Program
                     {
                         if (options.LogName is not null)
                         {
-                            Logger.WriteError("You have already defined a log name to search within.");
+                            Logger.Error("You have already defined a log name to search within.");
                             return false;
                         }
 

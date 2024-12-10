@@ -1,5 +1,8 @@
 ﻿using System.Diagnostics;
 using System.Diagnostics.Eventing.Reader;
+using System.Text;
+using System.Text.Json;
+using Serilog;
 
 namespace Eventy;
 
@@ -8,7 +11,9 @@ public class LogEngine(Options options)
     /// <summary>
     /// Console logger.
     /// </summary>
-    private readonly ConsoleLogger _logger = new();
+    private readonly Serilog.Core.Logger _logger = new LoggerConfiguration()
+        .WriteTo.Console()
+        .CreateLogger();
 
     /// <summary>
     /// Query for log names or entries matching the parsed options.
@@ -180,6 +185,36 @@ public class LogEngine(Options options)
     }
 
     /// <summary>
+    /// Serialize data and write to disk.
+    /// </summary>
+    /// <param name="data">Data to write.</param>
+    private void ExportData(object data)
+    {
+        if (options.ExportPath is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var json = JsonSerializer.Serialize(data);
+
+            File.WriteAllText(options.ExportPath, json, Encoding.UTF8);
+
+            _logger.Information(
+                "Exported results to {path}", 
+                options.ExportPath);
+        }
+        catch (Exception ex)
+        {
+            _logger.Error(
+                "Error while exporting results to {path}. {message}",
+                options.ExportPath,
+                ex.Message);
+        }
+    }
+
+    /// <summary>
     /// Check if the current user has access to query entries.
     /// </summary>
     /// <param name="eventLog">Event log.</param>
@@ -203,32 +238,36 @@ public class LogEngine(Options options)
     {
         try
         {
+            _logger.Information("Querying for event log names.");
+            
             var names = EventLog.GetEventLogs()
                 .Where(this.UserHasAccess)
                 .Select(n => n.LogDisplayName)
                 .OrderBy(n => n)
                 .ToArray();
 
-            _logger.Write(
-                "Found ",
-                ConsoleColor.Blue,
-                names.Length,
-                (byte)0x00,
-                " accessible log name",
-                names.Length is 1 ? ":" : "s:",
-                Environment.NewLine);
+            _logger.Information(
+                "Found {count} accessible log name(s).",
+                names.Length);
+            
+            Console.WriteLine();
+            Console.ForegroundColor = ConsoleColor.White;
 
             foreach (var name in names)
             {
-                _logger.Write(
-                    ConsoleColor.White,
-                    name,
-                    Environment.NewLine);
+                Console.WriteLine(name);
             }
+
+            Console.WriteLine();
+            Console.ResetColor();
+
+            this.ExportData(names);
         }
         catch (Exception ex)
         {
-            _logger.WriteException(ex);
+            _logger.Error(
+                "Error while querying for log names. {message}",
+                ex.Message);
         }
     }
 
@@ -237,16 +276,13 @@ public class LogEngine(Options options)
     /// </summary>
     private void QueryLogEntries()
     {
-        _logger.Write(
-            "Querying for log entries under the ",
-            ConsoleColor.White,
-            options.LogName!,
-            (byte)0x00,
-            " log name.",
-            Environment.NewLine,
-            Environment.NewLine);
+        _logger.Information(
+            "Querying for log entries under {logName}",
+            options.LogName);
 
         EventLogReader? reader = null;
+
+        var records = new List<EventRecord>();
 
         try
         {
@@ -259,12 +295,17 @@ public class LogEngine(Options options)
         }
         catch (Exception ex)
         {
-            _logger.WriteException(ex);
+            _logger.Error(
+                "Error while opening event log query. {message}",
+                ex.Message);
+            
             reader?.Dispose();
             return;
         }
 
         var count = 0;
+        
+        Console.WriteLine();
 
         while (true)
         {
@@ -274,9 +315,8 @@ public class LogEngine(Options options)
             {
                 record = reader.ReadEvent();
             }
-            catch (Exception ex)
+            catch
             {
-                _logger.WriteException(ex);
                 continue;
             }
 
@@ -295,6 +335,11 @@ public class LogEngine(Options options)
                 continue;
             }
 
+            if (options.ExportPath is not null)
+            {
+                records.Add(record);
+            }
+
             this.ViewEventRecordRow(record);
 
             count++;
@@ -304,35 +349,24 @@ public class LogEngine(Options options)
                 break;
             }
         }
+        
+        Console.WriteLine();
 
         if (count is 0)
         {
-            _logger.Write(
-                Environment.NewLine,
-                "Found no log entries matching query under the ",
-                ConsoleColor.White,
-                options.LogName!,
-                (byte)0x00,
-                " log name.",
-                Environment.NewLine);
+            _logger.Warning(
+                "Found no log entries matching query under {logName}",
+                options.LogName);
         }
         else
         {
-            _logger.Write(
-                Environment.NewLine,
-                "Found ",
-                ConsoleColor.Blue,
+            _logger.Information(
+                "Found {count} log entries matching query under {logName}",
                 count,
-                (byte)0x00,
-                " log entr",
-                count is 1 ? "y" : "ies",
-                " matching query under the ",
-                ConsoleColor.White,
-                options.LogName!,
-                (byte)0x00,
-                " log name.",
-                Environment.NewLine);
+                options.LogName);
         }
+        
+        this.ExportData(records);
 
         reader.Dispose();
     }
@@ -365,26 +399,23 @@ public class LogEngine(Options options)
             }
             catch (Exception ex)
             {
-                _logger.WriteException(ex);
+                _logger.Error(
+                    "Error while querying for log names. {message}",
+                    ex.Message);
+                
                 return;
             }
         }
 
         var found = 0;
+        var records = new List<EventRecord>();
 
         foreach (var name in names)
         {
-            _logger.Write(
-                "Querying for log entry ",
-                ConsoleColor.Blue,
-                options.RecordId!,
-                (byte)0x00,
-                " under the ",
-                ConsoleColor.White,
-                name,
-                (byte)0x00,
-                " log name.",
-                Environment.NewLine);
+            _logger.Information(
+                "Querying for log entry {recordId} under {logName}",
+                options.RecordId,
+                name);
             
             EventRecord? record = null;
 
@@ -410,12 +441,18 @@ public class LogEngine(Options options)
             }
             catch (EventLogNotFoundException)
             {
-                _logger.WriteError($"Unable to access event log {name}");
+                _logger.Error(
+                    $"Unable to access event log {name}",
+                    name);
+                
                 continue;
             }
             catch (Exception ex)
             {
-                _logger.WriteException(ex);
+                _logger.Error(
+                    "Error while getting next event record. {message}",
+                    ex.Message);
+                
                 continue;
             }
 
@@ -423,10 +460,15 @@ public class LogEngine(Options options)
             {
                 if (options.LogName is null)
                 {
-                    _logger.WriteError("Record not found!");
+                    _logger.Warning("Record not found!");
                 }
                 
                 continue;
+            }
+
+            if (options.ExportPath is not null)
+            {
+                records.Add(record);                
             }
 
             found++;
@@ -437,19 +479,18 @@ public class LogEngine(Options options)
         switch (found)
         {
             case > 1:
-                _logger.Write(
-                    "Found ",
-                    ConsoleColor.Blue,
-                    found,
-                    (byte)0x00,
-                    " log entries.",
-                    Environment.NewLine);
+                _logger.Information(
+                    "Found {count} log entries.",
+                    found);
+                
                 break;
             
             case 0:
-                _logger.WriteError("Record not found!");
+                _logger.Warning("Record not found!");
                 break;
         }
+
+        this.ExportData(records);
     }
 
     /// <summary>
@@ -462,6 +503,7 @@ public class LogEngine(Options options)
         string? opcodeDisplayName = default;
         string? userName = default;
         string? taskDisplayName = default;
+        string? levelName = default;
         string[]? keywords = default;
 
         try
@@ -496,7 +538,24 @@ public class LogEngine(Options options)
         try
         {
             opcodeDisplayName = record.OpcodeDisplayName;
+        }
+        catch
+        {
+            // Do nothing.
+        }
+        
+        try
+        {
             taskDisplayName = record.TaskDisplayName;
+        }
+        catch
+        {
+            // Do nothing.
+        }
+        
+        try
+        {
+            levelName = record.LevelDisplayName;
         }
         catch
         {
@@ -513,7 +572,7 @@ public class LogEngine(Options options)
             { "Provider Id", record.ProviderId?.ToString() ?? "-" },
                 
             { "Source", record.ProviderName ?? "-" },
-            { "Level", record.LevelDisplayName ?? "-" },
+            { "Level", levelName ?? "-" },
             { "Log Name", record.LogName ?? "-" },
             { "Machine Name", record.MachineName ?? "-" },
             { "User", userName ?? "-" },
@@ -535,27 +594,25 @@ public class LogEngine(Options options)
             }
         }
 
-        _logger.Write(Environment.NewLine);
+        Console.WriteLine();
 
         foreach (var (key, value) in dict)
         {
-            _logger.Write(
-                key,
-                ": ",
-                new string(' ', longest - key.Length),
-                ConsoleColor.Blue,
-                value,
-                Environment.NewLine);
+            Console.Write(key);
+            Console.Write(": ");
+            Console.Write(new string(' ', longest - key.Length));
+
+            Console.ForegroundColor = ConsoleColor.Blue;
+            Console.WriteLine(value);
+            Console.ResetColor();
         }
 
         if (description is not null)
         {
-            _logger.Write(
-                description,
-                Environment.NewLine);
+            Console.WriteLine(description);
         }
         
-        _logger.Write(Environment.NewLine);
+        Console.WriteLine();
     }
 
     /// <summary>
@@ -564,7 +621,7 @@ public class LogEngine(Options options)
     /// <param name="record">Event record.</param>
     private void ViewEventRecordRow(EventRecord record)
     {
-        var id = record.RecordId?.ToString() ?? "-";
+        var recordId = record.RecordId?.ToString() ?? "-";
         var created = record.TimeCreated?.ToString("yyyy-MM-dd HH:mm:ss") ?? "-";
         var source = record.ProviderName ?? "-";
 
@@ -579,29 +636,31 @@ public class LogEngine(Options options)
             _ => ConsoleColor.Blue
         };
 
-        var levelName = record.Level switch
-        {
-            0 => "Information",
-            1 => "Critical",
-            2 => "Error",
-            3 => "Warning",
-            4 => "Information",
-            5 => "Verbose",
-            _ => "Unknown"
-        };
+        string levelName;
 
-        _logger.Write(
-            levelColor,
-            levelName,
-            new string(' ', 13 - levelName.Length),
-            ConsoleColor.Blue,
-            id,
-            new string(' ', 10 - id.Length),
-            ConsoleColor.Green,
-            created,
-            new string(' ', 21 - created.Length),
-            ConsoleColor.White,
-            source,
-            Environment.NewLine);
+        try
+        {
+            levelName = record.LevelDisplayName;
+        }
+        catch
+        {
+            levelName = "Unknown";
+        }
+
+        Console.ForegroundColor = levelColor;
+        Console.Write(levelName);
+        Console.Write(new string(' ', 13 - levelName.Length));
+        
+        Console.ForegroundColor = ConsoleColor.Blue;
+        Console.Write(recordId);
+        Console.Write(new string(' ', 10 - recordId.Length));
+        
+        Console.ForegroundColor = ConsoleColor.Green;
+        Console.Write(created);
+        Console.Write(new string(' ', 21 - created.Length));
+        
+        Console.ForegroundColor = ConsoleColor.White;
+        Console.WriteLine(source);
+        Console.ResetColor();
     }
 }
